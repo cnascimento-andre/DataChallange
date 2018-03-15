@@ -11,10 +11,10 @@ library(reshape2)
 library(dplyr)
 library(gridExtra)
 
-directory<-"D:/0_backup/pessoal/cursos/Kaggle/totvs"
-setwd(directory)
+rawdata <- fromJSON("D:/folder where the dataset.zip is unzipped/sample.txt")
 
-rawdata <- fromJSON("D:/0_backup/pessoal/cursos/Kaggle/totvs/sample.txt")
+# the initial idea was to download the file direct from the link, but I had some problems to unzip and open the sample.txt file
+# so I had to download and unzip the file by hand
 
 # ------------------------ Tidying the data ---------------------------------------------------------------
 
@@ -89,8 +89,10 @@ nz2 <- nz2[nz2$zeroVar == FALSE & nz2$nzv == FALSE,]
 keeps1 <- c("monthday", rownames(nz2)[c(grep("^qty.", rownames(nz2)))])
 longformatQTY <- melt(agg[,keeps1], id = "monthday")
 ggplot(data = longformatQTY, aes(x = monthday, y = value, colour = variable)) +
+            ggtitle("Main products total consume (qty)") +
             geom_line() +
             ylab("Qty (KG | UN)")+
+            xlab("2016-jan-")+
             scale_x_continuous(breaks = c(agg$monthday))
 # this plot shows peaks for each product at the same weekday (2006-01-06, 13 and 20) which is wednesday
 # the buffet qty, shown in KG, seems to be more constant (smaller difference between peaks and valleys)
@@ -115,7 +117,7 @@ ets1 <- ets(ts1Train, model = "MMM")
 # even with different models, as AAA, MAM, etc.
 fcast <- forecast(ets1)
 # plotting the forecast for the fourth week
-plot(fcast, xlim = c(1,4.5), xlab = "6 days period", ylab = "total income R$")
+plot(fcast, xlim = c(1,4.5), xlab = "6 days period", ylab = "total income R$", main = "Prediction by forecast (MMM) model")
 lines(ts1Test, col = "red")
 # as it is observed, the model it is not reliable to next period prediction, maybe it is necessary more time data
 
@@ -123,8 +125,33 @@ lines(ts1Test, col = "red")
 lm(agg$vProd ~ agg$monthday)
 # the linear regression calculates an almost constant prediction for the total income (~R$5400,00 per day)
 ggplot(data = agg, aes(x = monthday, y = vProd, colour = "observed data")) +
+    ggtitle("Prediction by linear regression") +
     ylab("total income - R$") + 
     xlab("monthday - 2016-jan") + 
     geom_line() +
     geom_smooth(aes(colour = "linear model prediction"), method = "lm", se = FALSE) +
     scale_x_continuous(breaks = c(agg$monthday))
+
+# As there is no enougth data for a properly forecast model,
+# the linear calculates an almost constant prediction, 
+# and by the exploratory analysis we could see a sazonal aspect,
+# maybe using the mean of each weekday is a good choice to predict the next week total income
+wdays <- c()
+for (i in 1:length(agg$monthday)) {
+    wdays[i] <- weekdays(as.Date(paste("2016-01-", agg$monthday[i], sep = "")))
+}
+wmean <- tapply(agg$vProd, wdays, mean)
+df <- data.frame(weekday = as.factor(names(wmean)), vProd = wmean)
+df$weekday <- factor(df$weekday, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+df <- df[order(df$weekday),]
+prediction <- data.frame(january.day = c(25:30), vProd = df$vProd)
+print(prediction)
+# plotting prediction by mean
+ggplot(data = agg, aes(x = monthday, y = vProd, colour = "observed data")) +
+    ggtitle("Prediction by weekday mean") +
+    ylab("total income - R$") + 
+    xlab("monthday - 2016-jan-") + 
+    geom_line() + geom_point() +
+    geom_line(data = prediction, aes(x = january.day, y = vProd, colour = "simple mean prediction")) +
+    geom_point(data = prediction, aes(x = january.day, y = vProd, colour = "simple mean prediction")) +
+    scale_x_continuous(breaks = c(agg$monthday, prediction$january.day))
